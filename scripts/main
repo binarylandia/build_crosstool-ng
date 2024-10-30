@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+export NAME="gcc"
+export BUILD_DIR=".build"
+export INSTALL_DIR="/opt/${NAME}"
+export OUT_DIR=".out"
+
+export NICE="nice -19 ionice -c2 -n5"
+export jobs="${jobs:=$(($(nproc --all) + 2))}"
+export build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
+
+function abspath() {
+  readlink -m "$1"
+}
+export -f abspath
+
+function log() {
+  tee -a "${1}" | stdbuf -oL grep --color=always -iE "error|fail|cannot|can't|unable|"
+}
+export -f log
+
+function package() {
+  local input_dir="${1}"
+  local output_tarball="${2}"
+
+  ${NICE} find "${input_dir}" -printf "%P\n" \
+    | ${NICE} tar --no-recursion -cf - -C "${input_dir}" --files-from=- \
+    | ${NICE} xz -T0 -k > "${output_tarball}"
+}
+export -f package
+
+function replace() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+  sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$file"
+  grep -q "^${key}=\"${value}\"" "$file" || { echo "Error: Failed to set ${key} to ${value} in ${file}"; exit 1; }
+}
+export -f replace
+
+export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
+export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
+
+gcc_versions=(
+  "9.5.0"
+  "10.5.0"
+  "12.4.0"
+  "13.3.0"
+  "14.2.0"
+)
+
+function build_and_package() {
+  set -euxo pipefail
+
+  local conf_filepath="${1}"
+  local filename=$(basename "$1")
+  local gcc_version="${filename%%_*}"
+  local arch="${filename#*_}"
+  local arch="${arch%.config}"
+
+  echo "Building gcc $gcc_version for $arch (based on $conf_filepath)"
+
+  build_dir="$(abspath ${BUILD_DIR})/${gcc_version}-${arch}"
+  outdir="$(abspath "${OUT_DIR}")/"
+  install_dir="$(abspath "${INSTALL_DIR}")/${gcc_version}-${arch}"
+  mkdir -p "${build_dir}" "${outdir}" "${install_dir}"
+
+  pushd "$build_dir" >/dev/null
+    src_dir="${NAME}-${arch}"
+
+    mkdir -p "${src_dir}"
+    pushd "${src_dir}" >/dev/null
+      cp "${ROOT_DIR}/${conf_filepath}" ".config"
+
+      replace "CT_PREFIX_DIR" "${install_dir}" ".config"
+
+      ${NICE} ct-ng build.${jobs}
+
+      cp ".config" "${install_dir}/"
+      package "${install_dir}" "${outdir}/${NAME}-${gcc_version}-${arch}-${build_time}.tar.xz"
+    popd >/dev/null
+  popd >/dev/null
+}
+
+export -f build_and_package
+parallel -j4 --line-buffer --tag build_and_package ::: configs/*.config
+
