@@ -78,7 +78,6 @@ function build_and_package() {
 
       ${NICE} ct-ng build.${jobs}
 
-      cp ".config" "${install_dir}/"
       package "${install_dir}" "${outdir}/${NAME}-${gcc_version}-${arch}-${build_time}.tar.xz"
     popd >/dev/null
   popd >/dev/null
