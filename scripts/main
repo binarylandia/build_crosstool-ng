@@ -70,6 +70,19 @@ function build_and_package() {
 
       ${NICE} ct-ng build.${jobs}
 
+      if [[ "${arch}" =~ (mingw|windows) ]]; then
+        # HACK: symlink missing libgcc_eh.a, because cargo insists it's needed. However, mingw toolchain does not have it.
+        # https://github.com/r-windows/rtools-packages/issues/185
+        # https://github.com/skeeto/w64devkit/issues/52
+        pushd "${install_dir}/lib/gcc/x86_64-w64-mingw32/${gcc_version}" >/dev/null
+          ln -s "libgcc.a" "libgcc_eh.a"
+        popd >/dev/null
+
+        # HACK: sysroot in MinGW GCC is nested under additional `mingw/` path segment, copy it upstairs to avoid having to
+        # set different sysroot variables for Linux and Windows
+        cp -r "${install_dir}/x86_64-w64-mingw32/sysroot/mingw/"* "${install_dir}/x86_64-w64-mingw32/sysroot"/
+      fi
+
       package "${install_dir}" "${outdir}/${NAME}-${gcc_version}-${arch}-${build_time}.tar.xz"
     popd >/dev/null
   popd >/dev/null
