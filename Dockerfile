@@ -75,8 +75,10 @@ ENV CT_NG_CONFIG_PATH="/usr/share/crosstool-ng/config"
 
 RUN set -euxo pipefail >/dev/null \
 && mkdir -p "${TMP_CT_NG_BUILD_DIR}" \
-&& curl -fsSL "http://crosstool-ng.org/download/crosstool-ng/crosstool-ng-1.26.0.tar.xz" | tar --strip-components=1 -C "${TMP_CT_NG_BUILD_DIR}" -xJ \
+&& git clone --recursive "https://github.com/crosstool-ng/crosstool-ng" "${TMP_CT_NG_BUILD_DIR}" \
 && cd "${TMP_CT_NG_BUILD_DIR}" \
+&& git checkout "4773bd609c0f788328d6ffc36f6cc9ea8f09a95f" \
+&& ./bootstrap \
 && ./configure --prefix="/usr" \
 && make -j$(nproc) \
 && make install \

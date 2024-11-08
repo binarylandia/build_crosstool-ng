@@ -43,14 +43,6 @@ export -f replace
 export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
 export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
 
-gcc_versions=(
-  "9.5.0"
-  "10.5.0"
-  "12.4.0"
-  "13.3.0"
-  "14.2.0"
-)
-
 function build_and_package() {
   set -euxo pipefail
 
