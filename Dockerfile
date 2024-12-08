@@ -20,10 +20,13 @@ RUN set -euxo pipefail >/dev/null \
   curl \
   gcc \
   git \
+  gzip \
   make \
+  pigz \
   sudo \
   tar \
   xz \
+  zstd \
 && dnf clean all \
 && rm -rf /var/cache/yum
 
@@ -48,6 +51,7 @@ RUN set -euxo pipefail >/dev/null \
   gcc \
   git \
   gperf \
+  gzip \
   help2man \
   libncurses-dev \
   libncurses5-dev \
@@ -57,6 +61,7 @@ RUN set -euxo pipefail >/dev/null \
   parallel \
   patch \
   perl \
+  pigz \
   python-dev \
   python3 \
   sudo \
@@ -65,6 +70,7 @@ RUN set -euxo pipefail >/dev/null \
   unzip \
   wget \
   xz-utils \
+  zstd \
 >/dev/null \
 && rm -rf /var/lib/apt/lists/* \
 && apt-get clean autoclean >/dev/null \

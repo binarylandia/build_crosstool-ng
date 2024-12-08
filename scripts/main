@@ -21,15 +21,40 @@ function log() {
 }
 export -f log
 
-function package() {
+function package_xz() {
   local input_dir="${1}"
-  local output_tarball="${2}"
-
-  ${NICE} find "${input_dir}" -printf "%P\n" \
-    | ${NICE} tar --no-recursion -cf - -C "${input_dir}" --files-from=- \
-    | ${NICE} xz -T0 -k > "${output_tarball}"
+  local output_basename="${2}"
+  mkdir -p "$(dirname "${output_basename}")"
+  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | xz -T $(nproc) -5 > '${output_basename}.tar.xz'"
 }
-export -f package
+export -f package_xz
+
+function package_gz() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+  mkdir -p "$(dirname "${output_basename}")"
+  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | pigz -p $(nproc) -7 > '${output_basename}.tar.gz'"
+}
+export -f package_gz
+
+function package_zst() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+  mkdir -p "$(dirname "${output_basename}")"
+  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | zstdmt -T$(nproc) -7 > '${output_basename}.tar.zst'"
+}
+export -f package_zst
+
+function package_all() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+
+  parallel ::: \
+    "package_xz '${input_dir}' '${output_basename}'" \
+    "package_gz '${input_dir}' '${output_basename}'" \
+    "package_zst '${input_dir}' '${output_basename}'"
+}
+export -f package_all
 
 function replace() {
   local key="$1"
@@ -83,7 +108,7 @@ function build_and_package() {
         cp -r "${install_dir}/x86_64-w64-mingw32/sysroot/mingw/"* "${install_dir}/x86_64-w64-mingw32/sysroot"/
       fi
 
-      package "${install_dir}" "${outdir}/${NAME}-${gcc_version}-${arch}-${build_time}.tar.xz"
+      package_all "${install_dir}" "${outdir}/${NAME}-${gcc_version}-${arch}-${build_time}"
     popd >/dev/null
   popd >/dev/null
 }
