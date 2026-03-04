@@ -1,6 +1,4 @@
-# build_crosstool-ng
-
-Prebuilt GCC cross-compiler toolchains for multiple target platforms.
+# Prebuilt GCC cross-compiler toolchains for multiple platforms
 
 ## [Releases](https://github.com/binarylandia/build_crosstool-ng/releases)
 
