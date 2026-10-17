@@ -128,6 +128,25 @@ function check_toolchain() {
     done
   fi
 
+  # The runtime libraries go into position-independent executables and shared
+  # libraries, which only PIC archives allow (GCC --with-pic). Linking a Fortran
+  # program that pulls libgfortran and libquadmath both ways checks this.
+  if [[ "${arch}" == *-linux-* ]]; then
+    printf 'subroutine f(x)\n  real(8) :: x\n  character(8) :: s\n  write (s, "(f8.3)") x\n  print *, trim(s) // "!"\nend\n' >"${check_dir}/pic.f90"
+    "${bin}-gfortran" -c -fPIC "${check_dir}/pic.f90" -o "${check_dir}/pic.o"
+    local fortran_runtime=()
+    local runtime_archive
+    for runtime_archive in libgfortran.a libquadmath.a; do
+      runtime_archive="$("${bin}-gfortran" -print-file-name="${runtime_archive}")"
+      if [[ "${runtime_archive}" == /* ]]; then
+        fortran_runtime+=("${runtime_archive}")
+      fi
+    done
+    printf 'void f_(double *);\nint main(void) { double x = 1.5; f_(&x); return 0; }\n' >"${check_dir}/pic-main.c"
+    "${bin}-gcc" -fPIE -pie "${check_dir}/pic-main.c" "${check_dir}/pic.o" "${fortran_runtime[@]}" -lm -o "${check_dir}/pic-exe"
+    "${bin}-gcc" -fPIC -shared "${check_dir}/pic.o" "${fortran_runtime[@]}" -lm -o "${check_dir}/pic.so"
+  fi
+
   if [[ "${arch}" == aarch64* ]] && version_at_least "${binutils_version}" "2.38"; then
     printf 'ptrue p0.d\n' >"${check_dir}/sve.s"
     "${bin}-gcc" -march=armv8.2-a+sve -c "${check_dir}/sve.s" -o "${check_dir}/sve.o"
