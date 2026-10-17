@@ -97,6 +97,7 @@ RUN set -euxo pipefail >/dev/null \
 && cd "${TMP_CT_NG_BUILD_DIR}" \
 && git checkout "${CT_NG_COMMIT}" \
 && git apply /tmp/ct-ng-patches/*.patch \
+&& git -c user.name=build_crosstool-ng -c user.email=build@localhost commit --quiet --all --message="binarylandia patches" \
 && rm -rf /tmp/ct-ng-patches \
 && ./bootstrap \
 && ./configure --prefix="/usr" \
