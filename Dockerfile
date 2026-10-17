@@ -30,9 +30,13 @@ RUN set -euxo pipefail >/dev/null \
 && dnf clean all \
 && rm -rf /var/cache/yum
 
+# Debian 10 has moved to archive.debian.org, which has no buster-updates suite.
 RUN set -euxo pipefail >/dev/null \
 && if [[ "$DOCKER_BASE_IMAGE" != debian* ]] && [[ "$DOCKER_BASE_IMAGE" != ubuntu* ]]; then exit 0; fi \
 && export DEBIAN_FRONTEND=noninteractive \
+&& if [[ "$DOCKER_BASE_IMAGE" == debian:10* ]]; then \
+  sed -i -e 's|http://deb.debian.org|http://archive.debian.org|g' -e '/buster-updates/d' /etc/apt/sources.list; \
+fi \
 && apt-get update -qq --yes \
 && apt-get install -qq --no-install-recommends --yes \
   autoconf \
