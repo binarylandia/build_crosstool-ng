@@ -109,7 +109,8 @@ function check_toolchain() {
 
   local tool
   for tool in "${bin}-as" "${bin}-ld" "$("${bin}-gcc" -print-prog-name=as)"; do
-    if ! "${tool}" --version | head -1 | grep -qE " ${binutils_version//./\\.}\$"; then
+    # A release reports its version with the release date, such as 2.47.20260726.
+    if ! "${tool}" --version | head -1 | grep -qE " ${binutils_version//./\\.}(\.[0-9]{8})?\$"; then
       printf 'ERROR: %s is not binutils %s: %s\n' "${tool}" "${binutils_version}" "$("${tool}" --version | head -1)" >&2
       return 1
     fi
