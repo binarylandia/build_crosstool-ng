@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# Usage: ./build './scripts/derive-gcc-configs <from version> <GCC major>...'
+#
+# Derive the configs of newer GCC majors from the configs of one GCC version,
+# for every target. The script switches the GCC choice and drops the stored
+# values that depend on the GCC version, so that ct-ng olddefconfig fills in the
+# defaults of the new GCC, for example -std=gnu17 for glibc 2.17 with GCC 15 and
+# later. Run it in the builder image, which has ct-ng.
+#
+# Example:
+#   ./build './scripts/derive-gcc-configs 14.4.0 15 16'
+#
+set -euo pipefail
+trap "exit" INT
+
+function derive() {
+  local old="${1}"
+  local from="${2}"
+  local major="${3}"
+  local target="${old#configs/"${from}"_}"
+  target="${target%.config}"
+  local work_dir="tmp/derive-${major}-${target}"
+  rm -rf "${work_dir}"
+  mkdir -p "${work_dir}"
+  sed -E \
+    -e "s/^CT_GCC_V_[0-9]+=y$/CT_GCC_V_${major}=y/" \
+    -e '/^CT_GCC_VERSION=/d' \
+    -e '/^CT_GCC_(later_than|older_than)_[0-9_]+=y$/d' \
+    -e '/^CT_GCC_[0-9_]+_or_(later|older)=y$/d' \
+    -e '/^CT_(GLIBC|GMP|NCURSES)_EXTRA_CFLAGS=/d' \
+    "${old}" >"${work_dir}/.config"
+  pushd "${work_dir}" >/dev/null
+  ct-ng olddefconfig >/dev/null
+  popd >/dev/null
+  local version
+  version="$(sed -n 's/^CT_GCC_VERSION="\(.*\)"$/\1/p' "${work_dir}/.config")"
+  cp "${work_dir}/.config" "configs/${version}_${target}.config"
+  rm -rf "${work_dir}"
+  printf 'configs/%s_%s.config\n' "${version}" "${target}"
+}
+
+main() {
+  show_help() {
+    sed -n '2,${/^#/!q; s/^# \?//p}' "${BASH_SOURCE[0]}"
+  }
+
+  [[ "${1:-}" =~ ^(-h|--help)$ ]] && {
+    show_help
+    exit 0
+  }
+  (($# >= 2)) || {
+    show_help >&2
+    exit 1
+  }
+
+  local from="${1}"
+  shift
+  local configs=()
+  mapfile -t configs < <(printf '%s\n' "configs/${from}_"*.config)
+  [[ -f "${configs[0]}" ]] || {
+    printf 'ERROR: no configs/%s_*.config\n' "${from}" >&2
+    exit 1
+  }
+
+  local major
+  local old
+  for major in "$@"; do
+    for old in "${configs[@]}"; do
+      derive "${old}" "${from}" "${major}"
+    done
+  done
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
