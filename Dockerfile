@@ -82,15 +82,21 @@ fi \
 && apt-get autoremove --yes >/dev/null
 
 ENV TMP_CT_NG_BUILD_DIR="/opt/ct-ng"
-ARG CT_NG_COMMIT="4773bd609c0f788328d6ffc36f6cc9ea8f09a95f"
+# crosstool-NG 1.29.0
+ARG CT_NG_COMMIT="d7a90ff11aae5e59d6acd8c491f0297c15b7fa37"
 ENV CT_NG_COMMIT="${CT_NG_COMMIT}"
 ENV CT_NG_CONFIG_PATH="/usr/share/crosstool-ng/config"
 
+# docker/patches holds the changes to crosstool-NG itself; patches/ holds the
+# patches that crosstool-NG applies to the packages it builds.
+COPY docker/patches /tmp/ct-ng-patches
 RUN set -euxo pipefail >/dev/null \
 && mkdir -p "${TMP_CT_NG_BUILD_DIR}" \
 && git clone --recursive "https://github.com/crosstool-ng/crosstool-ng" "${TMP_CT_NG_BUILD_DIR}" \
 && cd "${TMP_CT_NG_BUILD_DIR}" \
 && git checkout "${CT_NG_COMMIT}" \
+&& git apply /tmp/ct-ng-patches/*.patch \
+&& rm -rf /tmp/ct-ng-patches \
 && ./bootstrap \
 && ./configure --prefix="/usr" \
 && make -j$(nproc) \

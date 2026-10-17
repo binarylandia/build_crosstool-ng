@@ -12,19 +12,8 @@ export jobs="${jobs:=$(($(nproc --all) + 2))}"
 export build_time="${BUILD_TIME:-$(date -u '+%Y-%m-%d_%H-%M-%S')}"
 
 # Configs to build, all by default. Select some with, for example:
-#   ./build 'CONFIGS="configs/14.2.0_*.config" ./scripts/main'
+#   ./build 'CONFIGS="configs/14.4.0_*.config" ./scripts/main'
 export CONFIGS="${CONFIGS:-configs/*.config}"
-
-# The binutils that replaces the binutils of the aarch64 glibc toolchains after
-# the crosstool-ng build. crosstool-ng allows only binutils older than 2.30 with
-# glibc older than 2.26 on aarch64, because newer binutils fail to compile that
-# glibc (config/libc/glibc.in). The old assembler cannot assemble SVE, SVE2, and
-# armv8.3+ code, so these toolchains keep the glibc that the old binutils built
-# and get this binutils for everything compiled with them. The version equals
-# the newest binutils that the pinned crosstool-ng offers, which the other
-# toolchains use.
-export BINUTILS_REPLACEMENT_VERSION="2.43.1"
-export BINUTILS_REPLACEMENT_SHA256="13f74202a3c4c51118b797a39ea4200d3f6cfbe224da6d1d95bb938480132dfd"
 
 function abspath() {
   readlink -m "$1"
@@ -100,48 +89,6 @@ function version_at_least() {
   [[ "$(printf '%s\n%s\n' "${2}" "${1}" | sort -V | head -1)" == "${2}" ]]
 }
 export -f version_at_least
-
-# Build the replacement binutils for a target and install it over the binutils
-# of the toolchain.
-function replace_binutils() {
-  set -euxo pipefail
-
-  local arch="${1}"
-  local install_dir="${2}"
-  local work_dir="${3}/binutils-${BINUTILS_REPLACEMENT_VERSION}"
-  local archive="${work_dir}.tar.xz"
-
-  rm -rf "${work_dir}"
-  mkdir -p "${work_dir}/src" "${work_dir}/build"
-  curl -fsSLo "${archive}" --retry 3 "https://ftpmirror.gnu.org/binutils/binutils-${BINUTILS_REPLACEMENT_VERSION}.tar.xz"
-  printf '%s  %s\n' "${BINUTILS_REPLACEMENT_SHA256}" "${archive}" | sha256sum -c -
-  tar -C "${work_dir}/src" --strip-components=1 -xJf "${archive}"
-
-  # Link statically and strip, as crosstool-ng does for the toolchain
-  # (CT_STATIC_TOOLCHAIN, CT_STRIP_HOST_TOOLCHAIN_EXECUTABLES), so the tools run
-  # on hosts with an older glibc than the build container.
-  pushd "${work_dir}/build" >/dev/null
-    ../src/configure \
-      --target="${arch}" \
-      --prefix="${install_dir}" \
-      --with-sysroot="${install_dir}/${arch}/sysroot" \
-      --disable-nls \
-      --disable-werror \
-      --disable-multilib \
-      --disable-gdb \
-      --disable-gdbserver \
-      --disable-gprofng \
-      --disable-sim \
-      --disable-plugins \
-      --without-debuginfod \
-      --without-zstd \
-      --enable-deterministic-archives
-    ${NICE} make -j"${jobs}" configure-host
-    ${NICE} make -j"${jobs}" LDFLAGS="-all-static"
-    ${NICE} make install-strip
-  popd >/dev/null
-}
-export -f replace_binutils
 
 # Fail when the binutils of a toolchain is not the expected version, when the
 # compiler driver runs another assembler, when an aarch64 toolchain cannot
@@ -293,12 +240,7 @@ function build_and_package() {
         cp -r "${install_dir}/x86_64-w64-mingw32/sysroot/mingw/"* "${install_dir}/x86_64-w64-mingw32/sysroot"/
       fi
 
-      if [[ "${arch}" == "aarch64-unknown-linux-gnu" ]]; then
-        replace_binutils "${arch}" "${install_dir}" "${build_dir}"
-        binutils_version="${BINUTILS_REPLACEMENT_VERSION}"
-      else
-        binutils_version="$(sed -n 's/^CT_BINUTILS_VERSION="\(.*\)"$/\1/p' ".config")"
-      fi
+      binutils_version="$(sed -n 's/^CT_BINUTILS_VERSION="\(.*\)"$/\1/p' ".config")"
       check_toolchain "${arch}" "${install_dir}" ".config" "${binutils_version}" "${build_dir}"
 
       local name="${NAME}-${gcc_version}-${arch}-${build_time}"

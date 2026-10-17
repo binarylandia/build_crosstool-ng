@@ -1,0 +1,56 @@
+aarch64: compute the load address from the first GOT entry
+
+Backport of glibc commits that make the dynamic loader independent of
+binutils resolving a 32-bit absolute relocation at link time. binutils 2.30
+and later no longer resolve it that way, so glibc 2.17 failed to build for
+aarch64 with them.
+
+- elf_machine_dynamic reads the link-time address of _DYNAMIC from the first
+  GOT entry, which binutils 2.24 and later fill in
+- elf_machine_load_address subtracts it from the run-time address of _DYNAMIC
+  (upstream a68ba2f3cd3c, "[AARCH64] Rewrite elf_machine_load_address using
+  _DYNAMIC symbol", glibc 2.27)
+
+The code equals sysdeps/aarch64/dl-machine.h of glibc 2.27.
+
+--- a/ports/sysdeps/aarch64/dl-machine.h
++++ b/ports/sysdeps/aarch64/dl-machine.h
+@@ -36,8 +36,8 @@
+ static inline ElfW(Addr) __attribute__ ((unused))
+ elf_machine_dynamic (void)
+ {
+-  ElfW(Addr) addr = (ElfW(Addr)) &_DYNAMIC;
+-  return addr;
++  extern const ElfW(Addr) _GLOBAL_OFFSET_TABLE_[] attribute_hidden;
++  return _GLOBAL_OFFSET_TABLE_[0];
+ }
+ 
+ /* Return the run-time load address of the shared object.  */
+@@ -48,23 +48,11 @@
+   /* To figure out the load address we use the definition that for any symbol:
+      dynamic_addr(symbol) = static_addr(symbol) + load_addr
+ 
+-     The choice of symbol is arbitrary. The static address we obtain
+-     by constructing a non GOT reference to the symbol, the dynamic
+-     address of the symbol we compute using adrp/add to compute the
+-     symbol's address relative to the PC. */
++    _DYNAMIC sysmbol is used here as its link-time address stored in
++    the special unrelocated first GOT entry.  */
+ 
+-  ElfW(Addr) static_addr;
+-  ElfW(Addr) dynamic_addr;
+-
+-  asm ("					\n\
+-	adrp	%1, _dl_start;			\n\
+-        add	%1, %1, #:lo12:_dl_start        \n\
+-        ldr	%w0, 1f				\n\
+-	b	2f				\n\
+-1:	.word	_dl_start			\n\
+-2:						\n\
+-       " : "=r" (static_addr),  "=r" (dynamic_addr));
+-  return dynamic_addr - static_addr;
++    extern ElfW(Dyn) _DYNAMIC[] attribute_hidden;
++    return (ElfW(Addr)) &_DYNAMIC - elf_machine_dynamic ();
+ }
+ 
+ /* Set up the loaded object described by L so its unrelocated PLT

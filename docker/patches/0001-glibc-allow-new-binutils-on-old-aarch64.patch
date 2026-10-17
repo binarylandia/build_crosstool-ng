@@ -1,0 +1,24 @@
+Allow binutils 2.30 and later with aarch64 glibc older than 2.26
+
+build_crosstool-ng builds aarch64 glibc only at version 2.17 and backports
+the glibc fixes to it (patches/glibc/2.17/), so the limit no longer applies.
+
+diff --git a/config/libc/glibc.in b/config/libc/glibc.in
+index 7fc26651..df870ecc 100644
+--- a/config/libc/glibc.in
++++ b/config/libc/glibc.in
+@@ -23,14 +23,10 @@ config GLIBC_DEP_KERNEL_HEADERS_VERSION
+     select LINUX_REQUIRE_3_2_or_later if GLIBC_2_24_or_later
+ 
+ # Glibc 2.26 requires at least binutils 2.25.
+-# Also, binutils 2.30 fail while compiling aarch64 glibc; fixed in 2.27
+-# and backported to 2.26. For other versions, require binutils older than
+-# 2.30 (if the patch is backported, binutils 2.23 will break).
+ config GLIBC_DEP_BINUTILS
+     def_bool y
+     select BINUTILS_REQUIRE_2_25_or_later if GLIBC_2_26_or_later
+     select BINUTILS_REQUIRE_2_39_or_later if GLIBC_2_42_or_later
+-    select BINUTILS_REQUIRE_older_than_2_30 if GLIBC_older_than_2_26 && ARCH_ARM && ARCH_64
+ 
+ # Glibc 2.26 requires GCC4.9 or newer
+ # Glibc 2.29 requires GCC5+ or, for ppc64le, GCC6.2+. We only support the latest

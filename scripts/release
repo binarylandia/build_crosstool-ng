@@ -8,7 +8,7 @@
 #
 # The release:
 #   - is named gcc-<GCC versions>-<build time>, for example
-#     gcc-14.2.0-2026-10-17_09-00-00
+#     gcc-14.4.0-2026-10-17_09-00-00
 #   - points at the commit that built the toolchains, which must be clean and
 #     pushed to origin
 #   - carries the archives, SHA256SUMS, and manifest.json with the metadata of
