@@ -57,6 +57,7 @@ fi \
   gperf \
   gzip \
   help2man \
+  jq \
   libncurses-dev \
   libncurses5-dev \
   libtool \
@@ -81,13 +82,15 @@ fi \
 && apt-get autoremove --yes >/dev/null
 
 ENV TMP_CT_NG_BUILD_DIR="/opt/ct-ng"
+ARG CT_NG_COMMIT="4773bd609c0f788328d6ffc36f6cc9ea8f09a95f"
+ENV CT_NG_COMMIT="${CT_NG_COMMIT}"
 ENV CT_NG_CONFIG_PATH="/usr/share/crosstool-ng/config"
 
 RUN set -euxo pipefail >/dev/null \
 && mkdir -p "${TMP_CT_NG_BUILD_DIR}" \
 && git clone --recursive "https://github.com/crosstool-ng/crosstool-ng" "${TMP_CT_NG_BUILD_DIR}" \
 && cd "${TMP_CT_NG_BUILD_DIR}" \
-&& git checkout "4773bd609c0f788328d6ffc36f6cc9ea8f09a95f" \
+&& git checkout "${CT_NG_COMMIT}" \
 && ./bootstrap \
 && ./configure --prefix="/usr" \
 && make -j$(nproc) \

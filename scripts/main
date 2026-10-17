@@ -36,11 +36,26 @@ function log() {
 }
 export -f log
 
+# Write the files of a directory as a tar stream to stdout. The entries are
+# sorted, owned by root, and carry the time SOURCE_DATE_EPOCH, so the same files
+# always give the same archive. Each path is listed once; tar does not recurse.
+function tar_dir() {
+  local input_dir="${1}"
+  find "${input_dir}" -mindepth 1 -printf '%P\n' | LC_ALL=C sort |
+    tar --posix --no-recursion --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+      --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
+      -cf - -C "${input_dir}" --files-from=-
+}
+export -f tar_dir
+
+# The compressors give the same output for the same input with any number of
+# threads: xz in its multi-threaded mode, pigz without the file name and time,
+# and zstd always.
 function package_xz() {
   local input_dir="${1}"
   local output_basename="${2}"
   mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | xz -T $(nproc) -5 > '${output_basename}.tar.xz'"
+  ${NICE} bash -c "tar_dir '${input_dir}' | xz -T $(( $(nproc) > 1 ? $(nproc) : 2 )) -5 > '${output_basename}.tar.xz'"
 }
 export -f package_xz
 
@@ -48,7 +63,7 @@ function package_gz() {
   local input_dir="${1}"
   local output_basename="${2}"
   mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | pigz -p $(nproc) -7 > '${output_basename}.tar.gz'"
+  ${NICE} bash -c "tar_dir '${input_dir}' | pigz -n -p $(nproc) -7 > '${output_basename}.tar.gz'"
 }
 export -f package_gz
 
@@ -56,7 +71,7 @@ function package_zst() {
   local input_dir="${1}"
   local output_basename="${2}"
   mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | zstdmt -T$(nproc) -7 > '${output_basename}.tar.zst'"
+  ${NICE} bash -c "tar_dir '${input_dir}' | zstdmt -T$(nproc) -7 > '${output_basename}.tar.zst'"
 }
 export -f package_zst
 
@@ -203,6 +218,38 @@ EOF
 }
 export -f check_toolchain
 
+# Write <archive basename>.json with the facts of a toolchain that scripts/release
+# puts into the manifest of a release.
+function write_metadata() {
+  local output_basename="${1}"
+  local arch="${2}"
+  local gcc_version="${3}"
+  local binutils_version="${4}"
+  local config="${5}"
+  local libc
+  libc="$(sed -n 's/^CT_LIBC="\(.*\)"$/\1/p' "${config}")"
+  local libc_version
+  libc_version="$(sed -n "s/^CT_$(tr '[:lower:]-' '[:upper:]_' <<<"${libc}")_VERSION=\"\(.*\)\"$/\1/p" "${config}")"
+  local name="${output_basename##*/}"
+  jq -n \
+    --arg name "${name}" \
+    --arg target "${arch}" \
+    --arg gcc "${gcc_version}" \
+    --arg binutils "${binutils_version}" \
+    --arg libc "${libc}" \
+    --arg libc_version "${libc_version}" \
+    --arg crosstool_ng "${CT_NG_COMMIT:?}" \
+    --arg base_image "${DOCKER_BASE_IMAGE:?}" \
+    --arg build_commit "${BUILD_COMMIT:?}" \
+    --argjson build_dirty "${BUILD_DIRTY:?}" \
+    --arg build_time "${build_time}" \
+    '{name: $name, target: $target, gcc: $gcc, binutils: $binutils, libc: $libc, libc_version: $libc_version,
+      crosstool_ng: $crosstool_ng, base_image: $base_image, build_commit: $build_commit, build_dirty: $build_dirty,
+      build_time: $build_time, files: [($name + ".tar.xz"), ($name + ".tar.gz"), ($name + ".tar.zst")]}' \
+    >"${output_basename}.json"
+}
+export -f write_metadata
+
 export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
 export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
 
@@ -218,7 +265,7 @@ function build_and_package() {
   echo "Building gcc $gcc_version for $arch (based on $conf_filepath)"
 
   build_dir="$(abspath ${BUILD_DIR})/${gcc_version}-${arch}"
-  outdir="$(abspath "${OUT_DIR}")/"
+  outdir="$(abspath "${OUT_DIR}")/${build_time}"
   install_dir="$(abspath "${INSTALL_DIR}")/${gcc_version}-${arch}"
   mkdir -p "${build_dir}" "${outdir}" "${install_dir}"
 
@@ -254,7 +301,9 @@ function build_and_package() {
       fi
       check_toolchain "${arch}" "${install_dir}" ".config" "${binutils_version}" "${build_dir}"
 
-      package_all "${install_dir}" "${outdir}/${NAME}-${gcc_version}-${arch}-${build_time}"
+      local name="${NAME}-${gcc_version}-${arch}-${build_time}"
+      package_all "${install_dir}" "${outdir}/${name}"
+      write_metadata "${outdir}/${name}" "${arch}" "${gcc_version}" "${binutils_version}" ".config"
     popd >/dev/null
   popd >/dev/null
 }

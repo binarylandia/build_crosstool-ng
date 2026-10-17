@@ -9,8 +9,19 @@ DOCKER_REPO="crosstool-ng_builder"
 DOCKER_IMAGE_NAME_SAFE="${DOCKER_REPO//\//-}"
 DOCKER_CONTAINER_NAME="${DOCKER_IMAGE_NAME_SAFE}-$(date -u "+%Y-%m-%d_%H-%M-%S_%3NZ")"
 
-#DOCKER_BASE_IMAGE="quay.io/pypa/manylinux2014_x86_64"
-DOCKER_BASE_IMAGE="debian:10"
+# Debian 10 by digest, so every build starts from the same image.
+DOCKER_BASE_IMAGE="debian:10@sha256:58ce6f1271ae1c8a2006ff7d3e54e9874d839f573d8009c20154ad0f2fb0a225"
+
+# The commit that the build runs, recorded in the metadata of each toolchain.
+# scripts/release publishes only toolchains of a clean, pushed commit.
+BUILD_COMMIT="$(git rev-parse HEAD)"
+BUILD_DIRTY="false"
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  BUILD_DIRTY="true"
+fi
+# The time of the commit, used as the time of every archive entry.
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+BUILD_TIME="${BUILD_TIME:-$(date -u "+%Y-%m-%d_%H-%M-%S")}"
 
 USER="user"
 GROUP="user"
@@ -27,7 +38,13 @@ docker build \
 
 mkdir -p .build .opt .out
 
-docker run -it --rm \
+tty_flags=()
+if tty -s; then
+  tty_flags=(--interactive --tty)
+fi
+
+
+docker run --rm "${tty_flags[@]}" \
   --init \
   --name="$DOCKER_CONTAINER_NAME" \
   --hostname="${DOCKER_IMAGE_NAME_SAFE}" \
@@ -40,6 +57,11 @@ docker run -it --rm \
   --env="USER=${USER}" \
   --env="GROUP=${GROUP}" \
   --env="PS1=\${USER}@\${HOST}" \
+  --env="DOCKER_BASE_IMAGE=${DOCKER_BASE_IMAGE}" \
+  --env="BUILD_COMMIT=${BUILD_COMMIT}" \
+  --env="BUILD_DIRTY=${BUILD_DIRTY}" \
+  --env="SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" \
+  --env="BUILD_TIME=${BUILD_TIME}" \
   --ulimit core=0 \
   "$DOCKER_IMAGE_NAME_SAFE" \
   bash -c "${*:-./scripts/main}"

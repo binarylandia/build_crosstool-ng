@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# Usage: $0 [--dry-run] [--notes <file>] <build time>
+#
+# Publish the toolchains of .out/<build time>/ as a GitHub release of
+# binarylandia/build_crosstool-ng. Run it on the host that built them, with gh
+# signed in.
+#
+# The release:
+#   - is named gcc-<GCC versions>-<build time>, for example
+#     gcc-14.2.0-2026-10-17_09-00-00
+#   - points at the commit that built the toolchains, which must be clean and
+#     pushed to origin
+#   - carries the archives, SHA256SUMS, and manifest.json with the metadata of
+#     every toolchain (target, GCC, binutils, C library, crosstool-ng commit,
+#     base image digest, build commit)
+#
+# A published release is never changed: the script stops when the release
+# exists. A fixed toolchain goes into a new release.
+#
+# Options:
+#   --dry-run       Check and write SHA256SUMS, manifest.json, and the notes,
+#                   but publish nothing
+#   --notes <file>  Markdown placed above the generated release notes
+#   -h, --help      Show this help
+#
+# Examples:
+#   $0 --dry-run 2026-10-17_09-00-00
+#   $0 --notes tmp/notes.md 2026-10-17_09-00-00
+#
+set -euo pipefail
+trap "exit" INT
+
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+ROOT_DIR="$(realpath "${THIS_DIR}/..")"
+REPO="binarylandia/build_crosstool-ng"
+
+function fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+# Fail unless HEAD is a clean commit that origin has.
+function check_commit() {
+  local commit="${1}"
+  if [[ -n "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=no)" ]]; then
+    fail "the working tree has uncommitted changes"
+  fi
+  git -C "${ROOT_DIR}" fetch --quiet origin
+  if [[ -z "$(git -C "${ROOT_DIR}" branch --remotes --contains "${commit}")" ]]; then
+    fail "commit ${commit} is not pushed to origin"
+  fi
+}
+
+# Fail unless every metadata file comes from a clean build of the commit and
+# names files that exist.
+function check_metadata() {
+  local out_dir="${1}"
+  local commit="${2}"
+  local meta
+  for meta in "${out_dir}"/*.json; do
+    [[ "${meta##*/}" == "manifest.json" ]] && continue
+    if [[ "$(jq -r '.build_commit' "${meta}")" != "${commit}" ]]; then
+      fail "${meta} comes from commit $(jq -r '.build_commit' "${meta}"), not from HEAD ${commit}"
+    fi
+    if [[ "$(jq -r '.build_dirty' "${meta}")" != "false" ]]; then
+      fail "${meta} comes from a build with uncommitted changes"
+    fi
+    local files=()
+    mapfile -t files < <(jq -r '.files[]' "${meta}")
+    local file
+    for file in "${files[@]}"; do
+      [[ -f "${out_dir}/${file}" ]] || fail "${meta} names ${file}, which is missing"
+    done
+  done
+}
+
+function write_notes() {
+  local manifest="${1}"
+  local notes_file="${2}"
+  local notes="${3}"
+  {
+    if [[ -n "${notes_file}" ]]; then
+      cat "${notes_file}"
+      printf '\n'
+    fi
+    jq -r '
+      "GCC cross toolchains built by crosstool-NG \(.toolchains[0].crosstool_ng[0:12]) from commit \(.commit[0:12]) of this repository, on \(.toolchains[0].base_image).\n",
+      "| Target | GCC | binutils | C library |",
+      "| --- | --- | --- | --- |",
+      (.toolchains[] | "| `\(.target)` | \(.gcc) | \(.binutils) | \(.libc) \(.libc_version) |"),
+      "\n`SHA256SUMS` lists the checksums of the archives, and `manifest.json` the metadata of every toolchain."
+    ' "${manifest}"
+  } >"${notes}"
+}
+
+main() {
+  show_help() {
+    sed -n '2,${/^#/!q; s/^# \?//p}' "${BASH_SOURCE[0]}" | sed "s|\$0|${0##*/}|g"
+  }
+
+  local dry_run=false
+  local notes_file=""
+
+  # shfmt:off
+  while (( $# > 0 )); do
+    case "${1}" in
+      -h|--help) show_help; exit 0 ;;
+      --dry-run) dry_run=true; shift ;;
+      --notes) notes_file="$(realpath "${2:?--notes needs a file}")"; shift 2 ;;
+      --) shift; break ;;
+      -*) printf "Unknown option: %s\n" "${1}" >&2; exit 1 ;;
+      *) break ;;
+    esac
+  done
+  # shfmt:on
+
+  local build_time="${1:-}"
+  [[ -n "${build_time}" ]] || {
+    show_help >&2
+    exit 1
+  }
+  local out_dir="${ROOT_DIR}/.out/${build_time}"
+  [[ -d "${out_dir}" ]] || fail "${out_dir} does not exist"
+
+  local commit
+  commit="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+  check_commit "${commit}"
+  check_metadata "${out_dir}" "${commit}"
+
+  local metadata=()
+  local meta
+  for meta in "${out_dir}"/*.json; do
+    [[ "${meta##*/}" == "manifest.json" ]] || metadata+=("${meta}")
+  done
+  ((${#metadata[@]} > 0)) || fail "${out_dir} has no toolchain metadata"
+
+  local gcc_versions
+  gcc_versions="$(jq -rs 'map(.gcc) | unique | join("_")' "${metadata[@]}")"
+  local tag="gcc-${gcc_versions}-${build_time}"
+
+  if gh release view "${tag}" --repo="${REPO}" >/dev/null 2>&1; then
+    fail "release ${tag} exists; a published release is never changed"
+  fi
+
+  local manifest="${out_dir}/manifest.json"
+  jq -s --arg repository "${REPO}" --arg commit "${commit}" --arg build_time "${build_time}" \
+    '{repository: $repository, commit: $commit, build_time: $build_time, toolchains: (sort_by(.target, .gcc))}' \
+    "${metadata[@]}" >"${manifest}"
+
+  local files=()
+  mapfile -t files < <(jq -r '.toolchains[].files[]' "${manifest}" | LC_ALL=C sort)
+  (cd "${out_dir}" && sha256sum -- "${files[@]}" >SHA256SUMS)
+
+  local notes="${out_dir}/release-notes.md"
+  write_notes "${manifest}" "${notes_file}" "${notes}"
+
+  printf 'Release %s at %s\n' "${tag}" "${commit}"
+  cat "${notes}"
+  if "${dry_run}"; then
+    printf '\nDry run: nothing published\n'
+    return
+  fi
+
+  (cd "${out_dir}" && gh release create "${tag}" \
+    --repo="${REPO}" \
+    --target="${commit}" \
+    --title="${tag}" \
+    --notes-file="${notes}" \
+    -- "${files[@]}" SHA256SUMS manifest.json)
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
