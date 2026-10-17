@@ -66,6 +66,7 @@ fi \
   parallel \
   patch \
   perl \
+  pkg-config \
   pigz \
   python-dev \
   python3 \
