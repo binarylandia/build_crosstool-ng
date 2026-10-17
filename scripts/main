@@ -9,7 +9,7 @@ export OUT_DIR=".out"
 
 export NICE="nice -19 ionice -c2 -n5"
 export jobs="${jobs:=$(($(nproc --all) + 2))}"
-export build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
+export build_time="${BUILD_TIME:-$(date -u '+%Y-%m-%d_%H-%M-%S')}"
 
 # Configs to build, all by default. Select some with, for example:
 #   ./build 'CONFIGS="configs/14.2.0_*.config" ./scripts/main'
@@ -102,6 +102,9 @@ function replace_binutils() {
   printf '%s  %s\n' "${BINUTILS_REPLACEMENT_SHA256}" "${archive}" | sha256sum -c -
   tar -C "${work_dir}/src" --strip-components=1 -xJf "${archive}"
 
+  # Link statically and strip, as crosstool-ng does for the toolchain
+  # (CT_STATIC_TOOLCHAIN, CT_STRIP_HOST_TOOLCHAIN_EXECUTABLES), so the tools run
+  # on hosts with an older glibc than the build container.
   pushd "${work_dir}/build" >/dev/null
     ../src/configure \
       --target="${arch}" \
@@ -114,9 +117,13 @@ function replace_binutils() {
       --disable-gdbserver \
       --disable-gprofng \
       --disable-sim \
+      --disable-plugins \
+      --without-debuginfod \
+      --without-zstd \
       --enable-deterministic-archives
-    ${NICE} make -j"${jobs}"
-    ${NICE} make install
+    ${NICE} make -j"${jobs}" configure-host
+    ${NICE} make -j"${jobs}" LDFLAGS="-all-static"
+    ${NICE} make install-strip
   popd >/dev/null
 }
 export -f replace_binutils
@@ -145,6 +152,18 @@ function check_toolchain() {
       return 1
     fi
   done
+
+  # A static toolchain runs on any host; a dynamically linked tool would need
+  # the glibc of the build container.
+  if grep -q '^CT_STATIC_TOOLCHAIN=y$' "${config}"; then
+    for tool in "${install_dir}/bin/"* "${install_dir}/${arch}/bin/"*; do
+      # readelf rejects the shell scripts among the tools, such as the ldd wrapper.
+      if [[ -f "${tool}" && -x "${tool}" ]] && readelf -l "${tool}" 2>/dev/null | grep -q 'program interpreter'; then
+        printf 'ERROR: %s is dynamically linked in a static toolchain\n' "${tool}" >&2
+        return 1
+      fi
+    done
+  fi
 
   if [[ "${arch}" == aarch64* ]] && version_at_least "${binutils_version}" "2.38"; then
     printf 'ptrue p0.d\n' >"${check_dir}/sve.s"
