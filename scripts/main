@@ -284,6 +284,10 @@ function build_and_package() {
       write_metadata "${outdir}/${name}" "${arch}" "${gcc_version}" "${binutils_version}" ".config"
     popd >/dev/null
   popd >/dev/null
+
+  # The build folder of a packaged toolchain holds about 15 GB of sources and
+  # objects that nothing reads again.
+  rm -rf "${build_dir}"
 }
 
 export -f build_and_package
