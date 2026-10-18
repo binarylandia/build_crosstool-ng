@@ -147,6 +147,19 @@ function check_toolchain() {
     "${bin}-gcc" -fPIC -shared "${check_dir}/pic.o" "${fortran_runtime[@]}" -lm -o "${check_dir}/pic.so"
   fi
 
+  # Rust's windows-gnu targets and the MinGW runtime objects that rustc bundles
+  # are built for msvcrt; a toolchain whose default runtime is the UCRT makes
+  # mixed binaries that crash at startup. In a UCRT toolchain, libmsvcrt.a is a
+  # copy of libucrt.a.
+  if [[ "${arch}" == *-mingw32 ]]; then
+    local libdir
+    libdir="$(dirname "$("${bin}-gcc" -print-file-name=libmsvcrt.a)")"
+    if cmp -s "${libdir}/libmsvcrt.a" "${libdir}/libucrt.a"; then
+      printf 'ERROR: the default C runtime of the %s toolchain is the UCRT, not msvcrt\n' "${arch}" >&2
+      return 1
+    fi
+  fi
+
   if [[ "${arch}" == aarch64* ]] && version_at_least "${binutils_version}" "2.38"; then
     printf 'ptrue p0.d\n' >"${check_dir}/sve.s"
     "${bin}-gcc" -march=armv8.2-a+sve -c "${check_dir}/sve.s" -o "${check_dir}/sve.o"
