@@ -230,14 +230,17 @@ function write_metadata() {
 }
 export -f write_metadata
 
-export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
-export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
+THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
+export THIS_DIR
+ROOT_DIR="$(abspath "${THIS_DIR}/..")"
+export ROOT_DIR
 
 function build_and_package() {
   set -euxo pipefail
 
   local conf_filepath="${1}"
-  local filename=$(basename "$1")
+  local filename
+  filename="$(basename "$1")"
   local gcc_version="${filename%%_*}"
   local arch="${filename#*_}"
   local arch="${arch%.config}"
