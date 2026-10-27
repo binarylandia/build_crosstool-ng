@@ -36,6 +36,8 @@ for tool in "${dest}/bin/${tuple}-"*; do
   esac
   ln -s "${tool}" "${dest}/build-bin/${name}"
 done
-ln -s "gcc" "${dest}/build-bin/cc"
+if [[ ! -e "${dest}/build-bin/cc" ]]; then
+  ln -s "gcc" "${dest}/build-bin/cc"
+fi
 
 "${dest}/build-bin/gcc" --version

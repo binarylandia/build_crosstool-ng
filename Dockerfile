@@ -56,7 +56,7 @@ COPY --link "docker/files/distrust-compromised-roots" "/"
 RUN /distrust-compromised-roots
 
 ENV TMP_CT_NG_BUILD_DIR="/opt/ct-ng"
-# crosstool-NG 1.29.0
+# CT_NG_COMMIT is the commit of crosstool-NG 1.29.0
 ARG CT_NG_COMMIT="d7a90ff11aae5e59d6acd8c491f0297c15b7fa37"
 ENV CT_NG_COMMIT="${CT_NG_COMMIT}"
 ENV CT_NG_CONFIG_PATH="/usr/share/crosstool-ng/config"
