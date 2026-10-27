@@ -1,0 +1,4 @@
+# Files that download, each verifying what it downloads (see scripts/check-downloads)
+Dockerfile           clones crosstool-NG and checks out the commit CT_NG_COMMIT
+docker/files/fetch   verifies each download against docker/files/checksums
+scripts/release      fetches the refs of origin to check that the commit is pushed
