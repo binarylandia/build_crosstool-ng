@@ -91,9 +91,10 @@ function version_at_least() {
 export -f version_at_least
 
 # Fail when the binutils of a toolchain is not the expected version, when the
-# compiler driver runs another assembler, when an aarch64 toolchain cannot
-# assemble SVE and SVE2 code, or when a glibc toolchain links programs that need
-# a newer glibc than the one it was built with.
+# compiler driver runs another assembler, when ld cannot load the LTO plugin,
+# when a tool needs a newer glibc than the host compiler, when an aarch64
+# toolchain cannot assemble SVE and SVE2 code, or when a glibc toolchain links
+# programs that need a newer glibc than the one it was built with.
 function check_toolchain() {
   set -euxo pipefail
 
@@ -116,8 +117,8 @@ function check_toolchain() {
     fi
   done
 
-  # A static toolchain runs on any host. The tools of the other toolchains, and
-  # the plugins that they load, may need at most the glibc of the host compiler.
+  # The tools, and the plugins that they load, may need at most the glibc of the
+  # host compiler.
   local host_dirs=() host_dir
   for host_dir in bin libexec "${arch}/bin" lib/bfd-plugins; do
     if [[ -d "${install_dir}/${host_dir}" ]]; then
@@ -134,15 +135,11 @@ function check_toolchain() {
     fi
   done
 
-  if grep -q '^CT_STATIC_TOOLCHAIN=y$' "${config}"; then
-    for tool in "${install_dir}/bin/"* "${install_dir}/${arch}/bin/"*; do
-      # readelf rejects the shell scripts among the tools, such as the ldd wrapper.
-      if [[ -f "${tool}" && -x "${tool}" ]] && readelf -l "${tool}" 2>/dev/null | grep -q 'program interpreter'; then
-        printf 'ERROR: %s is dynamically linked in a static toolchain\n' "${tool}" >&2
-        return 1
-      fi
-    done
-  fi
+
+  # The driver passes the LTO plugin to ld on every link, so a program links only
+  # when ld loads the plugin; -flto also runs the LTO pass through it.
+  printf 'int main(void) { return 0; }\n' >"${check_dir}/lto.c"
+  "${bin}-gcc" -O2 -flto "${check_dir}/lto.c" -o "${check_dir}/lto"
 
   # The runtime libraries go into position-independent executables and shared
   # libraries, which only PIC archives allow (GCC --with-pic). Linking a Fortran
