@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+# check=experimental=all
 ARG DOCKER_BASE_IMAGE
 FROM $DOCKER_BASE_IMAGE
 
@@ -7,38 +9,9 @@ ENV DOCKER_BASE_IMAGE="${DOCKER_BASE_IMAGE}"
 SHELL ["bash", "-euxo", "pipefail", "-c"]
 
 RUN set -euxo pipefail >/dev/null \
-&& if [[ "$DOCKER_BASE_IMAGE" != centos* ]] && [[ "$DOCKER_BASE_IMAGE" != *manylinux2014* ]]; then exit 0; fi \
-&& echo -e "[buildlogs-c7.2009.u]\nname=https://buildlogs.centos.org/c7.2009.u.x86_64/\nbaseurl=https://buildlogs.centos.org/c7.2009.u.x86_64/\nenabled=1\ngpgcheck=0\n\n[buildlogs-c7.2009.00]\nname=https://buildlogs.centos.org/c7.2009.00.x86_64/\nbaseurl=https://buildlogs.centos.org/c7.2009.00.x86_64/\nenabled=1\ngpgcheck=0" > /etc/yum.repos.d/buildlogs.repo \
-&& echo -e "[llvm-toolset]\nname=https://buildlogs.centos.org/c7-llvm-toolset-13.0.x86_64/\nbaseurl=https://buildlogs.centos.org/c7-llvm-toolset-13.0.x86_64/\nenabled=1\ngpgcheck=0" > /etc/yum.repos.d/llvm-toolset.repo \
-&& sed -i "s/enabled=1/enabled=0/g" "/etc/yum/pluginconf.d/fastestmirror.conf" \
-&& sed -i "s/enabled=1/enabled=0/g" "/etc/yum/pluginconf.d/ovl.conf" \
-&& yum clean all \
-&& yum -y install dnf epel-release \
-&& dnf install -y \
-  bash \
-  ca-certificates \
-  curl \
-  gcc \
-  git \
-  gzip \
-  make \
-  pigz \
-  sudo \
-  tar \
-  xz \
-  zstd \
-&& dnf clean all \
-&& rm -rf /var/cache/yum
-
-# Debian 10 has moved to archive.debian.org, which has no buster-updates suite.
-RUN set -euxo pipefail >/dev/null \
-&& if [[ "$DOCKER_BASE_IMAGE" != debian* ]] && [[ "$DOCKER_BASE_IMAGE" != ubuntu* ]]; then exit 0; fi \
 && export DEBIAN_FRONTEND=noninteractive \
-&& if [[ "$DOCKER_BASE_IMAGE" == debian:10* ]]; then \
-  sed -i -e 's|http://deb.debian.org|http://archive.debian.org|g' -e '/buster-updates/d' /etc/apt/sources.list; \
-fi \
-&& apt-get update -qq --yes \
-&& apt-get install -qq --no-install-recommends --yes \
+&& apt-get update -qq \
+&& apt-get install --no-install-recommends --yes -qq \
   autoconf \
   automake \
   bash \
@@ -59,28 +32,28 @@ fi \
   help2man \
   jq \
   libncurses-dev \
-  libncurses5-dev \
   libtool \
   libtool-bin \
   make \
   parallel \
   patch \
   perl \
-  pkg-config \
   pigz \
-  python-dev \
+  pkg-config \
   python3 \
   sudo \
   tar \
   texinfo \
   unzip \
-  wget \
   xz-utils \
   zstd \
 >/dev/null \
-&& rm -rf /var/lib/apt/lists/* \
 && apt-get clean autoclean >/dev/null \
-&& apt-get autoremove --yes >/dev/null
+&& apt-get autoremove --yes >/dev/null \
+&& rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+COPY --link "docker/files/distrust-compromised-roots" "/"
+RUN /distrust-compromised-roots
 
 ENV TMP_CT_NG_BUILD_DIR="/opt/ct-ng"
 # crosstool-NG 1.29.0
@@ -119,7 +92,7 @@ ENV GID=$GID
 ENV TERM="xterm-256color"
 ENV HOME="/home/${USER}"
 
-COPY docker/files /
+COPY --link "docker/files/create-user" "/"
 
 RUN set -euxo pipefail >/dev/null \
 && /create-user \

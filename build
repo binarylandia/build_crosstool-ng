@@ -9,8 +9,8 @@ DOCKER_REPO="crosstool-ng_builder"
 DOCKER_IMAGE_NAME_SAFE="${DOCKER_REPO//\//-}"
 DOCKER_CONTAINER_NAME="${DOCKER_IMAGE_NAME_SAFE}-$(date -u "+%Y-%m-%d_%H-%M-%S_%3NZ")"
 
-# Debian 10 by digest, so every build starts from the same image.
-DOCKER_BASE_IMAGE="debian:10@sha256:58ce6f1271ae1c8a2006ff7d3e54e9874d839f573d8009c20154ad0f2fb0a225"
+# Debian 13 by digest, so every build starts from the same image.
+DOCKER_BASE_IMAGE="debian:13.7-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
 
 # The commit that the build runs, recorded in the metadata of each toolchain.
 # scripts/release publishes only toolchains of a clean, pushed commit.
