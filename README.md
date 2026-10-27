@@ -33,9 +33,11 @@ cross compiler, cross-compilation toolchain, gcc cross compile, linux to windows
 ./scripts/release <build time>
 ```
 
-- The base image is pinned by digest and crosstool-NG by commit; crosstool-NG verifies the sources it downloads
+- The base image (Debian 13) is pinned by digest and crosstool-NG by commit; crosstool-NG verifies the sources it downloads
+- The image trusts neither emSign ECC Root CA - G3 nor AAA Certificate Services, the roots above the eMudhra intermediate CAs whose private keys became public in October 2026 (`docker/files/distrust-compromised-roots`)
+- The tools of every toolchain are compiled by the `x86_64-unknown-linux-gnu` GCC 16 toolchain of an earlier release, whose sysroot has glibc 2.17 (`docker/files/install-host-gcc`, pinned by checksum in `docker/files/checksums`). The Linux toolchains are static; the MinGW toolchains link glibc dynamically to keep their LTO plugin, and run on any Linux host with glibc 2.17 or later. The build fails when a tool needs a newer glibc
 - `docker/patches/` changes crosstool-NG itself, and `patches/` holds the patches that crosstool-NG applies to the packages it builds. crosstool-NG allows only binutils older than 2.30 with aarch64 glibc older than 2.26; `patches/glibc/2.17/` backports the glibc fixes that make glibc 2.17 build with current binutils, and `docker/patches/` lifts the limit
-- The GCC 14.4.0 configs are made for the pinned crosstool-NG 1.29.0. The configs of older GCC versions come from an older crosstool-NG, whose package versions 1.29.0 partly lacks; regenerate them with `ct-ng olddefconfig` before building them
+- All configs (GCC 12.5.0, 14.4.0, 15.3.0, and 16.2.0) are made for the pinned crosstool-NG 1.29.0. `scripts/derive-gcc-configs` derives the configs of another GCC major from those of one version
 - Archives list their files in sorted order with one owner and the commit time, so the same files give the same archive
 - `scripts/release` publishes only a build of a clean, pushed commit, and never changes a published release
-- Each release has `SHA256SUMS` and `manifest.json`, which records for every toolchain its target, GCC, binutils, C library, crosstool-NG commit, base image, and build commit
+- Each release has `SHA256SUMS` and `manifest.json`, which records for every toolchain its target, GCC, binutils, C library, crosstool-NG commit, base image, host compiler, and build commit
