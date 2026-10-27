@@ -10,6 +10,11 @@
 # <prefix>/build-bin holds the tools without the target prefix (gcc, g++, ar,
 # ld, ...). crosstool-NG takes the build tools from PATH by these names when the
 # config sets no build tuple or prefix, so that directory goes first in PATH.
+# The compiler drivers there default to GNU C17 and GNU C++17, the defaults of
+# GCC 14: GCC 15 and later default to C23 and C++20, which reject code of the
+# older packages that the toolchains contain, such as the old-style function
+# declarations in the configure checks of GMP. A -std option of a build still
+# takes precedence, because the last -std option counts.
 # <prefix>/toolchain.json is the download record (see /fetch).
 #
 set -euo pipefail
@@ -27,17 +32,28 @@ mkdir -p "${dest}"
 xz -dc -T0 "${archive}" | tar -C "${dest}" -x
 rm "${archive}"
 
+# Write a driver script that runs a compiler with a default -std option.
+function write_driver() {
+  local name="${1}"
+  local compiler="${2}"
+  local std="${3}"
+  printf '#!/bin/sh\nexec "%s" -std=%s "$@"\n' "${compiler}" "${std}" >"${dest}/build-bin/${name}"
+  chmod +x "${dest}/build-bin/${name}"
+}
+
 mkdir -p "${dest}/build-bin"
 for tool in "${dest}/bin/${tuple}-"*; do
   name="${tool##*/"${tuple}"-}"
-  # ldd and populate work on the target sysroot, and the config file is no tool.
   case "${name}" in
+  # ldd and populate work on the target sysroot, and the config file is no tool.
   ldd | populate | ct-ng.config) continue ;;
+  gcc | cc) write_driver "${name}" "${tool}" gnu17 ;;
+  g++ | c++) write_driver "${name}" "${tool}" gnu++17 ;;
+  *) ln -s "${tool}" "${dest}/build-bin/${name}" ;;
   esac
-  ln -s "${tool}" "${dest}/build-bin/${name}"
 done
 if [[ ! -e "${dest}/build-bin/cc" ]]; then
-  ln -s "gcc" "${dest}/build-bin/cc"
+  write_driver cc "${dest}/bin/${tuple}-gcc" gnu17
 fi
 
 "${dest}/build-bin/gcc" --version
