@@ -1,0 +1,16 @@
+Download the MinGW-w64 sources over https only
+
+The first mirror of MinGW-w64 is a plain-http SourceForge URL. The second one
+serves the same files over https.
+
+diff --git a/packages/mingw-w64/package.desc b/packages/mingw-w64/package.desc
+index 6e09f679..6bf5859b 100644
+--- a/packages/mingw-w64/package.desc
++++ b/packages/mingw-w64/package.desc
+@@ -1,5 +1,5 @@
+ repository='git https://git.code.sf.net/p/mingw-w64/mingw-w64'
+-mirrors='http://downloads.sourceforge.net/sourceforge/mingw-w64 https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/'
++mirrors='https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/'
+ relevantpattern='v*.*|.'
+ archive_formats='.tar.bz2 .zip'
+ signature_format='packed/.sig'
