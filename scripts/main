@@ -116,8 +116,24 @@ function check_toolchain() {
     fi
   done
 
-  # A static toolchain runs on any host; a dynamically linked tool would need
-  # the glibc of the build container.
+  # A static toolchain runs on any host. The tools of the other toolchains, and
+  # the plugins that they load, may need at most the glibc of the host compiler.
+  local host_dirs=() host_dir
+  for host_dir in bin libexec "${arch}/bin" lib/bfd-plugins; do
+    if [[ -d "${install_dir}/${host_dir}" ]]; then
+      host_dirs+=("${install_dir}/${host_dir}")
+    fi
+  done
+  local host_file newest_host
+  find "${host_dirs[@]}" -type f -print0 | while IFS= read -r -d '' host_file; do
+    [[ "$(head -c 4 "${host_file}" | od -An -tx1)" == " 7f 45 4c 46" ]] || continue
+    newest_host="$(readelf --version-info --wide "${host_file}" | awk 'match($0, /GLIBC_[0-9]+(\.[0-9]+)+/) { print substr($0, RSTART + 6, RLENGTH - 6) }' | sort -V | tail -1)"
+    if [[ -n "${newest_host}" ]] && ! version_at_least "${HOST_GLIBC_VERSION:?}" "${newest_host}"; then
+      printf 'ERROR: %s needs glibc %s on the host, newer than glibc %s\n' "${host_file}" "${newest_host}" "${HOST_GLIBC_VERSION}" >&2
+      exit 1
+    fi
+  done
+
   if grep -q '^CT_STATIC_TOOLCHAIN=y$' "${config}"; then
     for tool in "${install_dir}/bin/"* "${install_dir}/${arch}/bin/"*; do
       # readelf rejects the shell scripts among the tools, such as the ldd wrapper.
@@ -220,11 +236,12 @@ function write_metadata() {
     --arg libc_version "${libc_version}" \
     --arg crosstool_ng "${CT_NG_COMMIT:?}" \
     --arg base_image "${DOCKER_BASE_IMAGE:?}" \
+    --slurpfile host_gcc "${HOST_GCC_RECORD:?}" \
     --arg build_commit "${BUILD_COMMIT:?}" \
     --argjson build_dirty "${BUILD_DIRTY:?}" \
     --arg build_time "${build_time}" \
     '{name: $name, target: $target, gcc: $gcc, binutils: $binutils, libc: $libc, libc_version: $libc_version,
-      crosstool_ng: $crosstool_ng, base_image: $base_image, build_commit: $build_commit, build_dirty: $build_dirty,
+      crosstool_ng: $crosstool_ng, base_image: $base_image, host_gcc: $host_gcc[0], build_commit: $build_commit, build_dirty: $build_dirty,
       build_time: $build_time, files: [($name + ".tar.xz"), ($name + ".tar.gz"), ($name + ".tar.zst")]}' \
     >"${output_basename}.json"
 }
@@ -291,6 +308,11 @@ function build_and_package() {
 }
 
 export -f build_and_package
+
+# The glibc of the host compiler, which bounds the glibc that the tools need.
+HOST_GLIBC_VERSION="$(gcc -dM -E -include features.h -x c /dev/null | awk '$2 == "__GLIBC__" { major = $3 } $2 == "__GLIBC_MINOR__" { minor = $3 } END { print major "." minor }')"
+export HOST_GLIBC_VERSION
+
 # shellcheck disable=SC2086 # CONFIGS holds a glob
 parallel -j4 --halt soon,fail=1 --line-buffer --tag build_and_package ::: ${CONFIGS}
 

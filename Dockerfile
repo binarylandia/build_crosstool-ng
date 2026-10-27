@@ -80,6 +80,14 @@ RUN set -euxo pipefail >/dev/null \
 && which ct-ng \
 && ct-ng -v
 
+# The compiler of the programs that run on the build machine, which are the
+# tools of every toolchain: GCC 16 on glibc 2.17 (see install-host-gcc).
+ENV HOST_GCC_DIR="/opt/host-gcc"
+COPY --link "docker/files/fetch" "docker/files/checksums" "docker/files/install-host-gcc" "/"
+RUN /install-host-gcc "${HOST_GCC_DIR}"
+ENV PATH="${HOST_GCC_DIR}/build-bin:${PATH}"
+ENV HOST_GCC_RECORD="${HOST_GCC_DIR}/toolchain.json"
+
 ARG USER=user
 ARG GROUP=user
 ARG UID

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# Usage: $0 <prefix>
+#
+# Install the x86_64-unknown-linux-gnu GCC 16 toolchain of an earlier release
+# into a prefix, as the compiler of the programs that run on the build machine.
+# Its sysroot has glibc 2.17, so the toolchains that it builds run on any Linux
+# host with glibc 2.17 or later, whatever the glibc of this image.
+#
+# <prefix>/build-bin holds the tools without the target prefix (gcc, g++, ar,
+# ld, ...). crosstool-NG takes the build tools from PATH by these names when the
+# config sets no build tuple or prefix, so that directory goes first in PATH.
+# <prefix>/toolchain.json is the download record (see /fetch).
+#
+set -euo pipefail
+
+dest="${1:?prefix}"
+tuple="x86_64-unknown-linux-gnu"
+version="16.2.0"
+build_time="2026-10-18_08-33-54"
+release="gcc-15.3.0_${version}-${build_time}"
+archive="/tmp/host-gcc.tar.xz"
+
+mkdir -p "${dest}"
+/fetch "https://github.com/binarylandia/build_crosstool-ng/releases/download/${release}/gcc-${version}-${tuple}-${build_time}.tar.xz" \
+  "${archive}" "${dest}/toolchain.json"
+xz -dc -T0 "${archive}" | tar -C "${dest}" -x
+rm "${archive}"
+
+mkdir -p "${dest}/build-bin"
+for tool in "${dest}/bin/${tuple}-"*; do
+  name="${tool##*/"${tuple}"-}"
+  # ldd and populate work on the target sysroot, and the config file is no tool.
+  case "${name}" in
+  ldd | populate | ct-ng.config) continue ;;
+  esac
+  ln -s "${tool}" "${dest}/build-bin/${name}"
+done
+ln -s "gcc" "${dest}/build-bin/cc"
+
+"${dest}/build-bin/gcc" --version
